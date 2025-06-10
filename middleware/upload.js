@@ -1,36 +1,28 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const path   = require('path');
+const fs     = require('fs');
+const { v4: uuidv4 } = require('uuid');
 
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const dir = './uploads';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
-    }
+  destination(req, file, cb) {
+    const dir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
     cb(null, dir);
   },
-  filename: function (req, file, cb) {
+  filename(req, file, cb) {
     const userId = req.usuario.id;
-    const grupoId = req.body.grupo_id;
-    const fecha = new Date().toISOString().slice(0, 10);
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `foto_${userId}_${grupoId}_${fecha}${ext}`);
+    const ext    = path.extname(file.originalname).toLowerCase();
+    const name   = `u${userId}_${uuidv4()}${ext}`;  // elimina la fecha, usa UUID
+    cb(null, name);
   }
 });
 
-const upload = multer({
+module.exports = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.gif'];
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Solo se permiten imágenes'));
-    }
+    if (['.jpg','.jpeg','.png','.gif'].includes(ext)) cb(null, true);
+    else cb(new Error('Solo se permiten imágenes'));
   }
 });
-
-module.exports = upload;

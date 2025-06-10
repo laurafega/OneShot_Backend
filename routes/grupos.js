@@ -1,13 +1,14 @@
-const express = require('express');
-const router = express.Router();
-const gruposController = require('../controllers/gruposController');
+const express        = require('express');
+const router         = express.Router();
+const gruposCtrl     = require('../controllers/gruposController');
 const verificarToken = require('../middleware/verificarToken');
 
-// Crear un nuevo grupo (usuario autenticado)
-router.post('/crear-grupo', verificarToken, gruposController.crearGrupo);
+router.post('/crear-grupo',  verificarToken, gruposCtrl.crearGrupo);
+router.post('/unirse-grupo', verificarToken, gruposCtrl.unirseAGrupo);
+router.get('/mis-grupos',     verificarToken, gruposCtrl.misGrupos);
+router.get('/:id',            verificarToken, gruposCtrl.obtenerGrupo);
 
-// Unirse a un grupo existente con código
-router.post('/unirse-grupo', verificarToken, gruposController.unirseAGrupo);
-router.get('/mis-grupos', verificarToken, gruposController.listarMisGrupos);
+router.post('/:id/retos',     verificarToken, gruposCtrl.actualizarReto);
+
 module.exports = router;
 

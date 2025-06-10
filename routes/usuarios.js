@@ -7,12 +7,9 @@ const verificarToken = require('../middleware/verificarToken');
 router.post('/registro', usuariosController.registrarUsuario);
 router.post('/login', usuariosController.loginUsuario);
 
-// ✅ Ruta protegida (va antes del export)
-router.get('/perfil', verificarToken, (req, res) => {
-  res.json({
-    mensaje: 'Acceso autorizado',
-    usuario: req.usuario
-  });
-});
+router.put('/actualizar', verificarToken, usuariosController.actualizarUsuario);
+
+//Ruta protegida (va antes del export)
+router.get('/perfil', verificarToken, usuariosController.obtenerPerfil);
 
 module.exports = router;

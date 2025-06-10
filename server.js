@@ -1,19 +1,24 @@
-const express = require('express');
-const cors = require('cors');
+const express    = require('express');
+const cors       = require('cors');
+const path       = require('path');
 require('dotenv').config();
-const connection = require('./db');
-
-// Ejecuta cron jobs
 require('./cron/crearRetosDiarios');
 require('./cron/borrarFotosAntiguas');
 
-const app = express();
-const port = process.env.PORT || 3000;
+const app        = express();
+const HOST       = process.env.HOST || '0.0.0.0';
+const PORT       = process.env.PORT || 3000;
 
-// Middlewares
+// Middlewares globales
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+app.use(express.urlencoded({ extended: true }));
+
+// Servir estáticos: carpeta uploads
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, 'uploads'))
+);
 
 // Rutas
 const usuariosRoutes = require('./routes/usuarios');
@@ -28,12 +33,12 @@ app.use('/retos', retosRoutes);
 const fotosRoutes = require('./routes/fotos');
 app.use('/fotos', fotosRoutes);
 
-// Ruta base
+// Ruta raíz
 app.get('/', (req, res) => {
   res.send('🎯 OneShot API funcionando');
 });
 
-// Iniciar servidor
-app.listen(port, () => {
-  console.log(`🚀 Servidor iniciado en http://localhost:${port}`);
+// Arrancar servidor
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 OneShot API corriendo en http://${HOST}:${PORT}`);
 });

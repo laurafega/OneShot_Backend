@@ -1,107 +1,187 @@
-const pool = require('../db'); // usando mysql2/promise
+const pool   = require('../db');
 const crypto = require('crypto');
 
-// Crear un grupo
 exports.crearGrupo = async (req, res) => {
-  console.log('🟡 Entrando a crearGrupo...');
-
   const { nombre } = req.body;
-  const usuarioId = req.usuario?.id;
-
-  console.log('🟢 Datos recibidos:', { nombre, usuarioId });
-
-  if (!nombre) return res.status(400).json({ error: 'El nombre del grupo es obligatorio' });
-  if (!usuarioId) return res.status(401).json({ error: 'Usuario no autenticado' });
-
+  const usuarioId = req.usuario.id;
   const codigo = crypto.randomBytes(3).toString('hex');
 
   try {
-    const [grupoResult] = await pool.query(
-      'INSERT INTO grupos (nombre, codigo) VALUES (?, ?)',
-      [nombre, codigo]
+    // Creo el grupo
+    const [g] = await pool.query(
+      'INSERT INTO grupos (nombre, codigo, creador_id) VALUES (?, ?, ?)',
+      [nombre, codigo, usuarioId]
     );
+    console.log(`[crearGrupo] Grupo creado: id=${g.insertId}`);
 
-    const grupoId = grupoResult.insertId;
-    console.log('✅ Grupo creado con ID:', grupoId);
-
+    // Inserto al creador en usuarios_grupos
     await pool.query(
       'INSERT INTO usuarios_grupos (usuario_id, grupo_id) VALUES (?, ?)',
-      [usuarioId, grupoId]
+      [usuarioId, g.insertId]
     );
+    console.log(`[crearGrupo] Usuario ${usuarioId} unido al grupo ${g.insertId}`);
 
-    console.log('✅ Usuario unido al grupo correctamente');
     res.status(201).json({ mensaje: 'Grupo creado con éxito', codigo });
   } catch (err) {
-    console.error('❌ Error al crear grupo:', err);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('[crearGrupo] Error:', err);
+    res.status(500).json({ error: 'Error al crear grupo' });
   }
 };
 
-// Unirse a un grupo existente con un código
+
 exports.unirseAGrupo = async (req, res) => {
+  console.log('[unirseAGrupo] Inicio');
   const { codigo } = req.body;
-  const usuarioId = req.usuario?.id;
-
-  console.log('📥 Unirse a grupo con código:', codigo, 'por usuario ID:', usuarioId);
-
-  if (!codigo) return res.status(400).json({ error: 'Código del grupo requerido' });
-  if (!usuarioId) return res.status(401).json({ error: 'Usuario no autenticado' });
+  const usuarioId = req.usuario.id;
+  console.log(`Usuario ${usuarioId} intenta unirse al grupo con código="${codigo}"`);
 
   try {
-    const [grupoRows] = await pool.query(
+    const [rows] = await pool.query(
       'SELECT id FROM grupos WHERE codigo = ?',
       [codigo]
     );
-
-    console.log('📡 Resultado del SELECT grupos:', grupoRows);
-
-    if (grupoRows.length === 0) {
-      console.log('⚠️ Grupo no encontrado con código:', codigo);
+    if (!rows.length) {
+      console.warn(`[unirseAGrupo] Código no encontrado: ${codigo}`);
       return res.status(404).json({ error: 'Grupo no encontrado' });
     }
 
-    const grupoId = grupoRows[0].id;
-    console.log('🔍 Grupo encontrado: ID =', grupoId);
+    const grupoId = rows[0].id;
+    console.log(`[unirseAGrupo] Grupo hallado: id=${grupoId}`);
 
     await pool.query(
       'INSERT INTO usuarios_grupos (usuario_id, grupo_id) VALUES (?, ?)',
       [usuarioId, grupoId]
     );
+    console.log(`[unirseAGrupo] Usuario ${usuarioId} unido al grupo ${grupoId}`);
 
-    console.log(`✅ Usuario ${usuarioId} unido al grupo ${grupoId}`);
-    res.status(200).json({ mensaje: 'Unido al grupo correctamente' });
+    res.json({ mensaje: 'Unido al grupo correctamente' });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      console.log('⚠️ Ya estás en este grupo');
+      console.warn(`[unirseAGrupo] Usuario ${usuarioId} ya está en el grupo ${codigo}`);
       return res.status(409).json({ error: 'Ya estás en este grupo' });
     }
-
-    console.error('❌ Error al unirse al grupo:', err);
+    console.error('[unirseAGrupo] Error:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
 
-// Listar los grupos del usuario autenticado
-exports.listarMisGrupos = async (req, res) => {
-  const usuarioId = req.usuario?.id;
-
-  console.log('📋 Listando grupos para usuario ID:', usuarioId);
-
-  if (!usuarioId) {
-    return res.status(401).json({ error: 'Usuario no autenticado' });
-  }
+exports.misGrupos = async (req, res) => {
+  console.log('[misGrupos] Inicio');
+  const usuarioId = req.usuario.id;
+  console.log(`Obteniendo grupos para usuario ${usuarioId}`);
 
   try {
-    const [grupos] = await pool.query(`
-      SELECT g.id, g.nombre, g.codigo
+    const [rows] = await pool.query(`
+      SELECT
+        g.id,
+        g.nombre,
+        COALESCE(r.descripcion, '') AS retoDiario,
+        (SELECT COUNT(*) FROM usuarios_grupos ug WHERE ug.grupo_id = g.id) AS integrantes,
+        (g.creador_id = ?) AS esAdmin
       FROM grupos g
-      JOIN usuarios_grupos ug ON g.id = ug.grupo_id
+      JOIN usuarios_grupos ug ON ug.grupo_id = g.id
+      LEFT JOIN retos r
+        ON r.grupo_id = g.id
+       AND DATE(r.fecha) = CURDATE()
       WHERE ug.usuario_id = ?
-    `, [usuarioId]);
+    `, [usuarioId, usuarioId]);
 
-    res.status(200).json({ grupos });
+    console.log(`[misGrupos] Encontrados ${rows.length} grupos`);
+    res.json({ grupos: rows });
   } catch (err) {
-    console.error('❌ Error al obtener los grupos del usuario:', err);
-    res.status(500).json({ error: 'Error al obtener los grupos' });
+    console.error('[misGrupos] Error:', err);
+    res.status(500).json({ error: 'Error al obtener grupos' });
+  }
+};
+
+exports.obtenerGrupo = async (req, res) => {
+  console.log('[obtenerGrupo] Inicio');
+  const usuarioId = req.usuario.id;
+  const grupoId   = req.params.id;
+  console.log(`Solicitando detalle del grupo id=${grupoId}`);
+
+  try {
+    const [[g]] = await pool.query(`
+      SELECT
+        g.id,
+        g.nombre,
+        g.codigo,
+        COALESCE(r.descripcion, '') AS retoDiario,
+        r.creado_por              AS usuarioAsignadoId,
+        (SELECT COUNT(*) FROM usuarios_grupos ug WHERE ug.grupo_id = g.id) AS integrantes,
+        g.creador_id,
+        (g.creador_id = ?) AS esAdmin
+      FROM grupos g
+      LEFT JOIN retos r
+        ON r.grupo_id = g.id
+       AND DATE(r.fecha) = CURDATE()
+      WHERE g.id = ?
+    `, [usuarioId, grupoId]);
+
+    if (!g) {
+      console.warn(`[obtenerGrupo] Grupo id=${grupoId} no encontrado`);
+      return res.status(404).json({ error: 'No encontrado' });
+    }
+
+    console.log(`[obtenerGrupo] Detalle cargado para grupo id=${grupoId}`);
+
+    const [[admin]] = await pool.query(
+      `SELECT id, nombre, avatar AS avatarUrl
+         FROM usuarios
+        WHERE id = ?`,
+      [g.creador_id]
+    );
+    console.log(`Administrador encontrado: ${JSON.stringify(admin)}`);
+
+    const [miembros] = await pool.query(
+      `SELECT u.id, u.nombre, u.avatar AS avatarUrl
+         FROM usuarios u
+         JOIN usuarios_grupos ug
+           ON ug.usuario_id = u.id
+        WHERE ug.grupo_id = ?`,
+      [grupoId]
+    );
+    console.log(`Miembros cargados: count=${miembros.length}`);
+
+    const grupo = {
+      ...g,
+      administrador: admin || null,
+      integrantesUsuarios: miembros
+    };
+
+    res.json({ grupo });
+  } catch (err) {
+    console.error('[obtenerGrupo] Error:', err);
+    res.status(500).json({ error: 'Error al obtener grupo' });
+  }
+};
+
+exports.actualizarReto = async (req, res) => {
+  console.log('[actualizarReto] Inicio');
+  const usuarioId = req.usuario.id;
+  const grupoId   = req.params.id;
+  const { descripcion } = req.body;
+  console.log(`🔹 Usuario ${usuarioId} actualiza reto para grupo ${grupoId}: "${descripcion}"`);
+
+  try {
+    const [result] = await pool.query(
+      `UPDATE retos
+         SET descripcion = ?
+       WHERE grupo_id = ?
+         AND DATE(fecha) = CURDATE()
+         AND creado_por = ?`,
+      [descripcion, grupoId, usuarioId]
+    );
+
+    if (result.affectedRows === 0) {
+      console.warn(`[actualizarReto] No autorizado o reto no existe para usuario ${usuarioId}`);
+      return res.status(403).json({ error: 'No autorizado o reto no existe' });
+    }
+
+    console.log(`[actualizarReto] Reto actualizado para grupo ${grupoId} por usuario ${usuarioId}`);
+    res.json({ mensaje: 'Reto actualizado con éxito' });
+  } catch (err) {
+    console.error('[actualizarReto] Error:', err);
+    res.status(500).json({ error: 'Error actualizando reto' });
   }
 };

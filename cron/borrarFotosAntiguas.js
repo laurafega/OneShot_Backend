@@ -1,21 +1,33 @@
-const cron = require('node-cron');
-const fs = require('fs');
-const path = require('path');
+const cron       = require('node-cron');
+const fs         = require('fs');
+const path       = require('path');
+const connection = require('../db');
 
-cron.schedule('59 23 * * *', () => {
-  const dir = './uploads';
-  const hoy = new Date().toISOString().slice(0, 10);
+cron.schedule('59 23 * * *', async () => {
+  console.log('[borrarFotosAntiguas] Empezando tarea de limpieza');
 
-  fs.readdir(dir, (err, files) => {
-    if (err) return console.error('Error leyendo uploads:', err);
+  try {
+    // Obtener todas las fotos cuya fecha es anterior a hoy
+    const [oldPhotos] = await connection.query(
+      "SELECT id, imagen_url FROM fotos WHERE DATE(fecha) < CURDATE()"
+    );
+    console.log(`[borrarFotosAntiguas] Fotos antiguas encontradas: ${oldPhotos.length}`);
 
-    files.forEach(file => {
-      if (!file.includes(hoy)) {
-        fs.unlink(path.join(dir, file), err => {
-          if (err) console.error('Error borrando archivo:', file, err);
-          else console.log(`Archivo borrado: ${file}`);
-        });
-      }
-    });
-  });
+    for (const { id, imagen_url } of oldPhotos) {
+      // Borrar el fichero en disco
+      const filePath = path.join(__dirname, '..', imagen_url);
+      fs.unlink(filePath, err => {
+        if (err) console.error('[borrarFotosAntiguas] Error borrando archivo:', filePath, err);
+        else          console.log('[borrarFotosAntiguas] Archivo borrado:', filePath);
+      });
+
+      // Eliminar registro en la base de datos
+      await connection.query('DELETE FROM fotos WHERE id = ?', [id]);
+      console.log('[borrarFotosAntiguas] Registro de BD eliminado para foto id=', id);
+    }
+
+    console.log('[borrarFotosAntiguas] Tarea completada');
+  } catch (err) {
+    console.error('[borrarFotosAntiguas] Error en la tarea:', err);
+  }
 });

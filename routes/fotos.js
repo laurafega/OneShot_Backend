@@ -1,31 +1,36 @@
-const express = require('express');
-const router = express.Router();
+const express        = require('express');
+const router         = express.Router();
 const verificarToken = require('../middleware/verificarToken');
-const upload = require('../middleware/upload');
-const fs = require('fs');
+const upload         = require('../middleware/upload');
+const fotosCtrl      = require('../controllers/fotosController');
 
-router.post('/subir-foto', verificarToken, upload.single('foto'), (req, res) => {
-  const userId = req.usuario.id;
-  const grupoId = req.body.grupo_id;
-  const fecha = new Date().toISOString().slice(0, 10);
+router.use(verificarToken);
 
-  if (!grupoId) {
-    return res.status(400).json({ error: 'Falta el grupo_id' });
-  }
+// Subir o reemplazar foto
+router.post(
+  '/subir-foto/:grupo_id',
+  (req, res, next) => {
+    upload.single('foto')(req, res, err => {
+      if (err) {
+        console.error('[MulterError]', err);
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  },
+  fotosCtrl.uploadOrReplace
+);
 
-  const dir = './uploads';
-  const archivos = fs.readdirSync(dir);
-  const fotoExistente = archivos.find(f => f.startsWith(`foto_${userId}_${grupoId}_${fecha}`));
+// Listar fotos del reto de hoy
+router.get(
+  '/grupo/:groupId',
+  fotosCtrl.listForGroup
+);
 
-  if (fotoExistente) {
-    return res.status(409).json({ error: 'Ya subiste una foto para este grupo hoy' });
-  }
-
-  if (!req.file) {
-    return res.status(400).json({ error: 'No se subió ningún archivo' });
-  }
-
-  res.status(201).json({ mensaje: 'Foto subida correctamente', filename: req.file.filename });
-});
+// Valorar foto
+router.post(
+  '/:fotoId/rate',
+  fotosCtrl.ratePhoto
+);
 
 module.exports = router;
